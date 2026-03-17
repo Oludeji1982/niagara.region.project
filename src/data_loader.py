@@ -1,38 +1,29 @@
 import pandas as pd
 
+
 def load_purchases(path):
 
-    try:
-        df = pd.read_csv(path)
-        return df
+    df = pd.read_csv(path)
 
-    except Exception as e:
-        print("Error loading purchases:", e)
-        return None
+    # Clean column names
+    df.columns = df.columns.str.strip()
+
+    # Standardize column names
+    df = df.rename(columns={
+        "Total Amount": "TotalAmount",
+        "Total Quantity": "TotalQuantity",
+        "Brand Name": "BrandName",
+        "Unit Price": "UnitPrice",
+        "Major Group": "MajorGroup"
+    })
+
+    return df
 
 
 def load_production(path):
 
-    try:
-        return pd.read_csv(path)
+    df = pd.read_csv(path)
 
-    except:
-        return None
+    df.columns = df.columns.str.strip()
 
-
-def load_menu_cost(path):
-
-    try:
-        return pd.read_csv(path)
-
-    except:
-        return None
-
-
-def load_homes(path):
-
-    try:
-        return pd.read_csv(path)
-
-    except:
-        return None
+    return df

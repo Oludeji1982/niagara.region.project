@@ -1,317 +1,169 @@
 import streamlit as st
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from src.data_loader import *
-from src.data_cleaner import *
-from src.purchasing_analysis import *
-from src.production_analysis import *
-from src.inflation_analysis import *
-
-st.set_page_config(
-    page_title="Niagara Region LTC Supply Intelligence",
-    layout="wide"
-)
-
-st.title("Niagara Region LTC Purchasing & Supply Dashboard")
-
-purchases = load_purchases("data/Fact_Purchases.csv")
-production = load_production("data/Fact_Production.csv")
-
-purchases = clean_purchases(purchases)
-production = clean_production(production)
-
-# Overview metrics
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Total Food Spend", f"${total_spend(purchases):,.0f}")
-
-with col2:
-    st.metric("SKU Count", sku_count(purchases))
-
-with col3:
-    st.metric("Waste Estimate", waste_estimate(production))
-
-# Supplier spend
-
-st.header("Supplier Spend")
-
-supplier = spend_by_supplier(purchases)
-
-fig, ax = plt.subplots()
-
-supplier.head(10).plot(kind="bar", ax=ax)
-
-st.pyplot(fig)
-
-# Top items
-
-st.header("Top Purchased Products")
-
-items = top_products(purchases)
-
-fig2, ax2 = plt.subplots()
-
-items.plot(kind="barh", ax=ax2)
-
-st.pyplot(fig2)
-
-# Inflation trend
-
-st.header("Food Price Inflation")
-
-trend = price_trend(purchases)
-
-fig3, ax3 = plt.subplots()import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+from src.filters import apply_filters
 
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+st.markdown("""
+<style>
+.main {
+    background-color: #f5f7f6;
+}
 
-# ----------------------------------------
-# PAGE CONFIG
-# ----------------------------------------
+h1, h2, h3 {
+    color: #004b2d;
+}
+
+.stMetric {
+    background-color: white;
+    padding: 15px;
+    border-radius: 10px;
+    border-left: 8px solid #006b3c;
+}
+
+.green-card {
+    border-left: 8px solid #2ecc71 !important;
+}
+
+.red-card {
+    border-left: 8px solid #e74c3c !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.set_page_config(
-    page_title="Niagara Region LTC Food Supply Intelligence",
+    page_title="Niagara Region LTC Procurement Intelligence",
     layout="wide"
 )
 
-st.title("Niagara Region LTC Food Supply Intelligence Dashboard")
+st.title("Niagara Region LTC Procurement Intelligence")
 
-st.write(
-"""
-This dashboard analyzes purchasing, menu demand, production, and supply chain
-patterns across Niagara Region Long Term Care Homes.
-"""
-)
-
-# ----------------------------------------
-# LOAD DATA
-# ----------------------------------------
+st.markdown("""
+<div style='background-color:#006b3c;padding:15px;border-radius:10px'>
+<h4 style='color:white'>Niagara Region LTC Food Supply Intelligence Platform</h4>
+<p style='color:white'>
+AI-powered procurement optimization, supplier intelligence, and food waste analytics
+</p>
+</div>
+""", unsafe_allow_html=True)
 
 @st.cache_data
 def load_data():
 
     purchases = pd.read_csv("data/Fact_Purchases.csv")
-    production = pd.read_csv("data/Fact_Production.csv")
     homes = pd.read_csv("data/Dim_Homes.csv")
 
-    purchases["Date"] = pd.to_datetime(purchases["Date"], errors="coerce")
-    production["Date"] = pd.to_datetime(production["Date"], errors="coerce")
+    purchases.columns = purchases.columns.str.strip()
 
-    return purchases, production, homes
+    return purchases, homes
 
 
-purchases, production, homes = load_data()
+purchases, homes = load_data()
 
-st.success("Dataset Loaded")
+st.session_state["raw_data"] = purchases
 
-# ----------------------------------------
-# OVERVIEW METRICS
-# ----------------------------------------
+filtered = apply_filters(purchases)
 
-st.header("Operational Overview")
+st.session_state["data"] = filtered
+st.session_state["homes"] = homes
 
-col1, col2, col3, col4 = st.columns(4)
+st.success(f"{len(filtered):,} records after filtering")
 
-with col1:
-    st.metric("Total Spend", f"${purchases['TotalAmount'].sum():,.0f}")
+if filtered.empty:
+    st.warning("No data matches the selected filters")
+    st.stop()
 
-with col2:
-    st.metric("Total Products", purchases["ItemName"].nunique())
+# KPI METRICS
 
-with col3:
-    waste = production["TotalToPrepare"].sum() - production["Portions"].sum()
-    st.metric("Estimated Waste", int(waste))
+col1, col2, col3 = st.columns(3)
 
-with col4:
-    st.metric("Total Suppliers", purchases["Distributor"].nunique())
+total_spend = filtered["Total Amount"].sum()
+total_qty = filtered["Total Quantity"].sum()
+avg_price = filtered["Unit Price"].mean()
 
-# ----------------------------------------
-# SPEND BY HOME
-# ----------------------------------------
+# RULE: higher price = bad
+price_color = "red-card" if avg_price > filtered["Unit Price"].median() else "green-card"
 
-st.header("Spend by LTC Home")
+col1.markdown(f"""
+<div class="stMetric">
+<h5>Total Spend</h5>
+<h2>${total_spend:,.0f}</h2>
+</div>
+""", unsafe_allow_html=True)
 
-spend_home = purchases.groupby("Facility")["TotalAmount"].sum()
+col2.markdown(f"""
+<div class="stMetric">
+<h5>Total Quantity</h5>
+<h2>{total_qty:,.0f}</h2>
+</div>
+""", unsafe_allow_html=True)
+
+col3.markdown(f"""
+<div class="stMetric {price_color}">
+<h5>Avg Unit Price</h5>
+<h2>${avg_price:.2f}</h2>
+</div>
+""", unsafe_allow_html=True)
+
+# MAJOR GROUP SAVINGS
+
+group_savings = filtered.groupby("Major Group").agg({
+    "Total Amount":"sum",
+    "Total Quantity":"sum"
+})
+
+group_savings["Unit Cost"] = (
+    group_savings["Total Amount"] /
+    group_savings["Total Quantity"]
+)
+
+benchmark = group_savings["Unit Cost"].min()
+
+group_savings["Potential Savings"] = (
+    group_savings["Unit Cost"] - benchmark
+) * group_savings["Total Quantity"]
+
+group_savings = group_savings.sort_values(
+    "Potential Savings",
+    ascending=False
+)
+
+st.subheader("Savings Opportunity by Major Group")
 
 fig, ax = plt.subplots()
 
-spend_home.plot(kind="bar", ax=ax)
+group_savings["Potential Savings"].head(10).plot(
+    kind="bar",
+    ax=ax
+)
 
-ax.set_ylabel("Total Spend")
+ax.set_xlabel("Major Group")
+ax.set_ylabel("Potential Savings ($)")
+ax.set_title("Procurement Savings Opportunity")
 
 st.pyplot(fig)
 
-# ----------------------------------------
-# SUPPLIER SPENDING
-# ----------------------------------------
+st.markdown("""
+<div style='background-color:#006b3c;padding:15px;border-radius:10px'>
+<h4 style='color:white'>Niagara Region LTC Food Supply Intelligence Platform</h4>
+<p style='color:white'>
+This platform analyzes procurement spending, supplier efficiency,
+SKU duplication, and food waste patterns across Niagara Region Long-Term Care homes.
+</p>
+</div>
+""", unsafe_allow_html=True)
 
-st.header("Supplier Spend Analysis")
+import plotly.express as px
 
-supplier = purchases.groupby("Distributor")["TotalAmount"].sum().sort_values(ascending=False)
+st.subheader("Savings Opportunity by Major Group")
 
-fig2, ax2 = plt.subplots()
-
-supplier.head(10).plot(kind="bar", ax=ax2)
-
-ax2.set_title("Top Suppliers")
-
-st.pyplot(fig2)
-
-# ----------------------------------------
-# TOP PRODUCTS
-# ----------------------------------------
-
-st.header("Top Purchased Products")
-
-top_items = purchases.groupby("ItemName")["TotalQty"].sum().sort_values(ascending=False).head(10)
-
-fig3, ax3 = plt.subplots()
-
-top_items.plot(kind="barh", ax=ax3)
-
-st.pyplot(fig3)
-
-# ----------------------------------------
-# SKU REDUCTION ANALYSIS
-# ----------------------------------------
-
-st.header("SKU Consolidation Opportunities")
-
-sku_counts = purchases.groupby("Category")["ItemName"].nunique()
-
-fig4, ax4 = plt.subplots()
-
-sku_counts.plot(kind="bar", ax=ax4)
-
-ax4.set_title("SKUs by Category")
-
-st.pyplot(fig4)
-
-# ----------------------------------------
-# WASTE ANALYSIS
-# ----------------------------------------
-
-st.header("Food Waste Analysis")
-
-production["Waste"] = production["TotalToPrepare"] - production["Portions"]
-
-waste_by_item = production.groupby("Item")["Waste"].sum()
-
-fig5, ax5 = plt.subplots()
-
-waste_by_item.sort_values(ascending=False).head(10).plot(kind="bar", ax=ax5)
-
-ax5.set_title("Top Waste Items")
-
-st.pyplot(fig5)
-
-# ----------------------------------------
-# PRICE INFLATION
-# ----------------------------------------
-
-st.header("Food Price Inflation")
-
-purchases["Month"] = purchases["Date"].dt.to_period("M")
-
-price_trend = purchases.groupby("Month")["UnitPrice"].mean()
-
-fig6, ax6 = plt.subplots()
-
-price_trend.plot(marker="o", ax=ax6)
-
-ax6.set_title("Average Unit Price Trend")
-
-st.pyplot(fig6)
-
-# ----------------------------------------
-# PURCHASING FREQUENCY
-# ----------------------------------------
-
-st.header("Purchasing Frequency")
-
-purchase_freq = purchases["ItemName"].value_counts().head(10)
-
-fig7, ax7 = plt.subplots()
-
-purchase_freq.plot(kind="bar", ax=ax7)
-
-st.pyplot(fig7)
-
-# ----------------------------------------
-# HOME PURCHASING PATTERNS
-# ----------------------------------------
-
-st.header("Purchasing Patterns by LTC Home")
-
-home_items = purchases.groupby(["Facility","ItemName"])["TotalQty"].sum()
-
-st.dataframe(home_items.head(20))
-
-# ----------------------------------------
-# AI DEMAND FORECASTING
-# ----------------------------------------
-
-st.header("AI Food Demand Forecast")
-
-df = purchases.copy()
-
-df["Month"] = df["Date"].dt.month
-
-X = df[["Month"]]
-y = df["TotalQty"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2
+fig = px.bar(
+    group_savings.head(10),
+    x=group_savings.head(10).index,
+    y="Potential Savings",
+    labels={"x":"Major Group","Potential Savings":"Savings ($)"},
+    title="Top Savings Opportunities",
+    color="Potential Savings",
+    color_continuous_scale="Greens"
 )
 
-model = RandomForestRegressor()
-
-model.fit(X_train, y_train)
-
-prediction = model.predict([[12]])
-
-st.metric("Predicted Demand Next Month", int(prediction[0]))
-
-# ----------------------------------------
-# MENU CATEGORY DISTRIBUTION
-# ----------------------------------------
-
-st.header("Meal Category Distribution")
-
-meal_counts = production["Meal"].value_counts()
-
-fig8, ax8 = plt.subplots()
-
-sns.barplot(
-    x=meal_counts.index,
-    y=meal_counts.values,
-    ax=ax8
-)
-
-st.pyplot(fig8)
-
-# ----------------------------------------
-# FOOTER
-# ----------------------------------------
-
-st.write("---")
-
-st.write("Project Team")
-
-st.write(
-"""
-- Oludeji Fashoro – Data Loader & Cleaning
-- Team Members – Supply Analytics
-"""
-)
-
-trend.plot(marker="o", ax=ax3)
-
-st.pyplot(fig3)
+st.plotly_chart(fig, use_container_width=True)
