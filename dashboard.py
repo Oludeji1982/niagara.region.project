@@ -1,71 +1,169 @@
 import streamlit as st
+import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+from src.filters import apply_filters
 
-from src.data_loader import *
-from src.data_cleaner import *
-from src.purchasing_analysis import *
-from src.production_analysis import *
-from src.inflation_analysis import *
+st.markdown("""
+<style>
+.main {
+    background-color: #f5f7f6;
+}
+
+h1, h2, h3 {
+    color: #004b2d;
+}
+
+.stMetric {
+    background-color: white;
+    padding: 15px;
+    border-radius: 10px;
+    border-left: 8px solid #006b3c;
+}
+
+.green-card {
+    border-left: 8px solid #2ecc71 !important;
+}
+
+.red-card {
+    border-left: 8px solid #e74c3c !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.set_page_config(
-    page_title="Niagara Region LTC Supply Intelligence",
+    page_title="Niagara Region LTC Procurement Intelligence",
     layout="wide"
 )
 
-st.title("Niagara Region LTC Purchasing & Supply Dashboard")
+st.title("Niagara Region LTC Procurement Intelligence")
 
-purchases = load_purchases("data/Fact_Purchases.csv")
-production = load_production("data/Fact_Production.csv")
+st.markdown("""
+<div style='background-color:#006b3c;padding:15px;border-radius:10px'>
+<h4 style='color:white'>Niagara Region LTC Food Supply Intelligence Platform</h4>
+<p style='color:white'>
+AI-powered procurement optimization, supplier intelligence, and food waste analytics
+</p>
+</div>
+""", unsafe_allow_html=True)
 
-purchases = clean_purchases(purchases)
-production = clean_production(production)
+@st.cache_data
+def load_data():
 
-# Overview metrics
+    purchases = pd.read_csv("data/Fact_Purchases.csv")
+    homes = pd.read_csv("data/Dim_Homes.csv")
+
+    purchases.columns = purchases.columns.str.strip()
+
+    return purchases, homes
+
+
+purchases, homes = load_data()
+
+st.session_state["raw_data"] = purchases
+
+filtered = apply_filters(purchases)
+
+st.session_state["data"] = filtered
+st.session_state["homes"] = homes
+
+st.success(f"{len(filtered):,} records after filtering")
+
+if filtered.empty:
+    st.warning("No data matches the selected filters")
+    st.stop()
+
+# KPI METRICS
 
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric("Total Food Spend", f"${total_spend(purchases):,.0f}")
+total_spend = filtered["Total Amount"].sum()
+total_qty = filtered["Total Quantity"].sum()
+avg_price = filtered["Unit Price"].mean()
 
-with col2:
-    st.metric("SKU Count", sku_count(purchases))
+# RULE: higher price = bad
+price_color = "red-card" if avg_price > filtered["Unit Price"].median() else "green-card"
 
-with col3:
-    st.metric("Waste Estimate", waste_estimate(production))
+col1.markdown(f"""
+<div class="stMetric">
+<h5>Total Spend</h5>
+<h2>${total_spend:,.0f}</h2>
+</div>
+""", unsafe_allow_html=True)
 
-# Supplier spend
+col2.markdown(f"""
+<div class="stMetric">
+<h5>Total Quantity</h5>
+<h2>{total_qty:,.0f}</h2>
+</div>
+""", unsafe_allow_html=True)
 
-st.header("Supplier Spend")
+col3.markdown(f"""
+<div class="stMetric {price_color}">
+<h5>Avg Unit Price</h5>
+<h2>${avg_price:.2f}</h2>
+</div>
+""", unsafe_allow_html=True)
 
-supplier = spend_by_supplier(purchases)
+# MAJOR GROUP SAVINGS
+
+group_savings = filtered.groupby("Major Group").agg({
+    "Total Amount":"sum",
+    "Total Quantity":"sum"
+})
+
+group_savings["Unit Cost"] = (
+    group_savings["Total Amount"] /
+    group_savings["Total Quantity"]
+)
+
+benchmark = group_savings["Unit Cost"].min()
+
+group_savings["Potential Savings"] = (
+    group_savings["Unit Cost"] - benchmark
+) * group_savings["Total Quantity"]
+
+group_savings = group_savings.sort_values(
+    "Potential Savings",
+    ascending=False
+)
+
+st.subheader("Savings Opportunity by Major Group")
 
 fig, ax = plt.subplots()
 
-supplier.head(10).plot(kind="bar", ax=ax)
+group_savings["Potential Savings"].head(10).plot(
+    kind="bar",
+    ax=ax
+)
+
+ax.set_xlabel("Major Group")
+ax.set_ylabel("Potential Savings ($)")
+ax.set_title("Procurement Savings Opportunity")
 
 st.pyplot(fig)
 
-# Top items
+st.markdown("""
+<div style='background-color:#006b3c;padding:15px;border-radius:10px'>
+<h4 style='color:white'>Niagara Region LTC Food Supply Intelligence Platform</h4>
+<p style='color:white'>
+This platform analyzes procurement spending, supplier efficiency,
+SKU duplication, and food waste patterns across Niagara Region Long-Term Care homes.
+</p>
+</div>
+""", unsafe_allow_html=True)
 
-st.header("Top Purchased Products")
+import plotly.express as px
 
-items = top_products(purchases)
+st.subheader("Savings Opportunity by Major Group")
 
-fig2, ax2 = plt.subplots()
+fig = px.bar(
+    group_savings.head(10),
+    x=group_savings.head(10).index,
+    y="Potential Savings",
+    labels={"x":"Major Group","Potential Savings":"Savings ($)"},
+    title="Top Savings Opportunities",
+    color="Potential Savings",
+    color_continuous_scale="Greens"
+)
 
-items.plot(kind="barh", ax=ax2)
-
-st.pyplot(fig2)
-
-# Inflation trend
-
-st.header("Food Price Inflation")
-
-trend = price_trend(purchases)
-
-fig3, ax3 = plt.subplots()
-
-trend.plot(marker="o", ax=ax3)
-
-st.pyplot(fig3)
+st.plotly_chart(fig, use_container_width=True)
