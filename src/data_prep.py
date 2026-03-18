@@ -15,6 +15,7 @@ def prepare_data(df):
         df["Cost_per_KG"] = df["Total Amount"] / df["BaseWeightKG"]
 
     else:
-        df["Cost_per_KG"] = df["Unit Price"]
+        df = df.copy()
+df.loc[:, "Cost_per_KG"] = df["Unit Price"]
 
     return df
