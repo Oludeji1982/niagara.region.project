@@ -2,20 +2,24 @@ import pandas as pd
 
 def prepare_data(df):
 
-    # REMOVE unwanted homes
-    df = df[~df["Home"].isin(["Riordon Street Shelter", "Summer Street Shelter"])]
+    if df is None:
+        return df
 
-    # COST PER KG SAFE LOGIC
+    df = df.copy()
+
+    # ---------------- REMOVE INVALID HOMES ----------------
+    df = df[~df["Home"].isin([
+        "Riordon Street Shelter",
+        "Summer Street Shelter"
+    ])]
+
+    # ---------------- STANDARDIZE COST ----------------
     if "Standardized Weight (KG)" in df.columns:
-        df = df[df["Standardized Weight (KG)"] > 0]
         df["Cost_per_KG"] = df["Total Amount"] / df["Standardized Weight (KG)"]
-
-    elif "BaseWeightKG" in df.columns:
-        df = df[df["BaseWeightKG"] > 0]
-        df["Cost_per_KG"] = df["Total Amount"] / df["BaseWeightKG"]
-
     else:
-        df = df.copy()
-df.loc[:, "Cost_per_KG"] = df["Unit Price"]
+        df["Cost_per_KG"] = df["Unit Price"]
+
+    # ---------------- CLEAN BAD VALUES ----------------
+    df = df[df["Cost_per_KG"] > 0]
 
     return df
