@@ -1,19 +1,26 @@
+import openai
 import pandas as pd
 
-def simple_chat(df, query):
+def ask_ai(df, question):
 
-    query = query.lower()
+    summary = df.describe().to_string()
 
-    if "spend" in query:
-        return f"Total spend is ${df['Total Amount'].sum():,.0f}"
+    prompt = f"""
+You are a procurement intelligence analyst.
 
-    elif "highest" in query:
-        top = df.groupby("Major Group")["Total Amount"].sum().idxmax()
-        return f"Highest spending category is {top}"
+Dataset summary:
+{summary}
 
-    elif "cheapest" in query:
-        cheapest = df.loc[df["Unit Price"].idxmin()]
-        return f"Cheapest item is {cheapest['Distribution Item']} at ${cheapest['Unit Price']:.2f}"
+Question:
+{question}
 
-    else:
-        return "Try asking about spend, highest category, or cheapest item."
+Answer clearly with insights and recommendations.
+"""
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+
+    return response.choices[0].message["content"]

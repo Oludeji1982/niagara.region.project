@@ -1,29 +1,16 @@
+import streamlit as st
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+df = prepare_data(raw)
+df = apply_filters(df)
 
-import streamlit as st
-from src.analytics_engine import sku_reduction_engine
+st.markdown("## **SKU Reduction**")
 
-st.title("SKU Reduction Recommendation Engine")
+sku = df.groupby(["Major Group","Brand Name"]).agg({
+    "Cost_per_KG":"mean",
+    "Total Quantity":"sum"
+}).reset_index()
 
-df = st.session_state["data"]
-
-if df.empty:
-    st.warning("No data available")
-    st.stop()
-
-sku, cheapest = sku_reduction_engine(df)
-
-st.subheader("All SKUs")
-
-st.dataframe(sku)
-
-st.subheader("Recommended SKU Standardization")
-
-st.dataframe(cheapest)
-
-st.info(
-"Recommendation: Standardize purchasing on the lowest unit-cost brand within each Major Group."
-)
+st.dataframe(sku.sort_values("Cost_per_KG", ascending=False))

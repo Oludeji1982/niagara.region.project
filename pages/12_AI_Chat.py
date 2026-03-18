@@ -1,18 +1,23 @@
 import streamlit as st
-from src.chat_engine import simple_chat
 from src.filters import apply_filters
-
-st.title("AI Chat Assistant")
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+df = prepare_data(raw)
+df = apply_filters(df)
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
+st.markdown("## **AI Chat Assistant**")
 
-query = st.text_input("Ask a question about your data")
+query = st.text_input("Ask about procurement")
 
 if query:
-    response = simple_chat(df, query)
-    st.success(response)
+
+    if "spend" in query:
+        st.success(f"${df['Total Amount'].sum():,.0f}")
+
+    elif "expensive" in query:
+        row = df.loc[df["Cost_per_KG"].idxmax()]
+        st.success(f"{row['Brand Name']} highest cost")
+
+    else:
+        st.info("Try: spend, expensive")

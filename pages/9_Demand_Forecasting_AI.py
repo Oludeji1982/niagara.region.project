@@ -1,36 +1,22 @@
-from src.filters import apply_filters
-
-raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
-
 import streamlit as st
 import plotly.express as px
-from src.ai_models import demand_forecast_model
+from src.filters import apply_filters
+from src.data_prep import prepare_data
 
-st.title("AI Demand Forecasting")
+raw = st.session_state.get("raw_data")
+df = prepare_data(raw)
+df = apply_filters(df)
 
-df = st.session_state["data"]
+st.markdown("## **Demand Forecasting**")
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
-
-forecast = demand_forecast_model(df)
-
-st.subheader("Predicted Food Demand (Next Cycle)")
-
-st.dataframe(forecast)
+forecast = df.groupby(["Home","Major Group"])["Total Quantity"].mean().reset_index()
+forecast["Forecast"] = forecast["Total Quantity"] * 1.1
 
 fig = px.bar(
-    forecast.head(20),
+    forecast,
     x="Major Group",
-    y="Predicted Next Demand",
-    color="Home",
-    title="Predicted Demand by Food Category",
+    y="Forecast",
+    color="Home"
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-st.info(
-"AI predicts future food demand based on historical purchasing patterns to reduce over-ordering."
-)

@@ -1,33 +1,49 @@
+import streamlit as st
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+if raw is None:
+    st.stop()
 
-import streamlit as st
-from src.analytics_engine import procurement_advisor
+df = prepare_data(raw)
+df = apply_filters(df)
 
 st.title("AI Procurement Advisor")
 
-df = st.session_state["data"]
+top = df.groupby("Major Group")["Total Amount"].sum().nlargest(10).index
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
+df = df[df["Major Group"].isin(top)]
 
-advice = procurement_advisor(df)
+sku = df.groupby(["Major Group","Brand Name"]).agg({
+    "Cost_per_KG":"mean",
+    "Total Quantity":"sum"
+}).reset_index()
 
-st.subheader("AI Recommendations")
+for g in sku["Major Group"].unique():
 
-if advice.empty:
-    st.success("No optimization opportunities detected")
-else:
-    st.dataframe(advice)
+    sub = sku[sku["Major Group"] == g]
 
-    st.subheader("Top Savings Insights")
+    if len(sub) < 2:
+        continue
 
-    for _, row in advice.head(5).iterrows():
+    cheap = sub.loc[sub["Cost_per_KG"].idxmin()]
+    exp = sub.loc[sub["Cost_per_KG"].idxmax()]
 
-        st.info(
-            f"Switching from {row['Current Brand']} to {row['Recommended Brand']} "
-            f"for {row['Item']} could save ${row['Potential Savings']:,.0f}"
-        )
+    savings = (exp["Cost_per_KG"] - cheap["Cost_per_KG"]) * exp["Total Quantity"]
+
+    if savings > 500:
+
+        st.error(f"""
+🔴 **{g}**
+
+Drop **{exp['Brand Name']}**  
+Switch to **{cheap['Brand Name']}**
+
+💰 Save: ${savings:,.0f}
+
+Reason:
+- Higher cost/kg (${exp['Cost_per_KG']:.2f})
+- Same category alternative cheaper
+- High usage amplifies loss
+""")

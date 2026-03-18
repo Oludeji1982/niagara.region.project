@@ -1,29 +1,21 @@
+import streamlit as st
+import plotly.express as px
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+df = prepare_data(raw)
+df = apply_filters(df)
 
-import streamlit as st
-from src.analytics_engine import supplier_optimization
+st.markdown("## **Supplier Optimization**")
 
-st.title("Supplier Cost Optimization Model")
+supplier = df.groupby(["Distributor","Brand Name"])["Cost_per_KG"].mean().reset_index()
 
-df = st.session_state["data"]
-
-if df.empty:
-    st.warning("No data available")
-    st.stop()
-
-supplier, cheapest_supplier = supplier_optimization(df)
-
-st.subheader("Supplier Price Comparison")
-
-st.dataframe(supplier)
-
-st.subheader("Cheapest Supplier by Product")
-
-st.dataframe(cheapest_supplier)
-
-st.success(
-"Switching to the cheapest supplier for identical products can significantly reduce procurement costs."
+fig = px.scatter(
+    supplier,
+    x="Distributor",
+    y="Cost_per_KG",
+    color="Brand Name"
 )
+
+st.plotly_chart(fig, use_container_width=True)

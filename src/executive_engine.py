@@ -1,73 +1,67 @@
 import pandas as pd
 
+EXCLUDED_HOMES = ["Riordon Street Shelter", "Summer Street Shelter"]
 
-# -----------------------------------
-# EXECUTIVE SUMMARY ENGINE
-# -----------------------------------
+def clean_data(df):
+    df = df.copy()
 
-def generate_executive_summary(df):
+    # Remove unwanted homes
+    df = df[~df["Home"].isin(EXCLUDED_HOMES)]
 
-    total_spend = df["Total Amount"].sum()
-    avg_price = df["Unit Price"].mean()
+    # Safe numeric conversion
+    df["Total Amount"] = pd.to_numeric(df["Total Amount"], errors="coerce")
+    df["Total Quantity"] = pd.to_numeric(df["Total Quantity"], errors="coerce")
 
-    highest_group = df.groupby("Major Group")["Total Amount"].sum().idxmax()
-    highest_home = df.groupby("Home")["Total Amount"].sum().idxmax()
+    # Cost per KG logic
+    if "Standardized Weight (KG)" in df.columns:
+        df["Standardized Weight (KG)"] = pd.to_numeric(df["Standardized Weight (KG)"], errors="coerce")
+        df = df[df["Standardized Weight (KG)"] > 0]
+        df["Cost_per_KG"] = df["Total Amount"] / df["Standardized Weight (KG)"]
 
-    summary = f"""
-    Total procurement spend is ${total_spend:,.0f}. 
-    The highest spending category is {highest_group}. 
-    {highest_home} is the highest spending LTC home. 
-    Average unit price is ${avg_price:.2f}.
-    """
+    elif "BaseWeightKG" in df.columns:
+        df["BaseWeightKG"] = pd.to_numeric(df["BaseWeightKG"], errors="coerce")
+        df = df[df["BaseWeightKG"] > 0]
+        df["Cost_per_KG"] = df["Total Amount"] / df["BaseWeightKG"]
 
-    return summary
+    else:
+        df["Cost_per_KG"] = df["Unit Price"]
 
-
-# -----------------------------------
-# SCENARIO SIMULATOR
-# -----------------------------------
-
-def scenario_simulator(df, reduction_percent=10):
-
-    scenario = df.copy()
-
-    scenario["Adjusted Quantity"] = scenario["Total Quantity"] * (1 - reduction_percent / 100)
-
-    scenario["Adjusted Spend"] = scenario["Adjusted Quantity"] * scenario["Unit Price"]
-
-    original_spend = df["Total Amount"].sum()
-    new_spend = scenario["Adjusted Spend"].sum()
-
-    savings = original_spend - new_spend
-
-    return {
-        "Original Spend": original_spend,
-        "New Spend": new_spend,
-        "Savings": savings
-    }
+    return df
 
 
-# -----------------------------------
-# AI RECOMMENDATION ENGINE
-# -----------------------------------
+def top10_groups(df):
+    g = df.groupby("Major Group")["Total Amount"].sum().reset_index()
+    return g.sort_values("Total Amount", ascending=False).head(10)
 
-def generate_ai_recommendations(df):
 
-    recommendations = []
-
-    group_cost = df.groupby("Major Group").agg({
-        "Total Amount":"sum",
+def savings_engine(df):
+    sku = df.groupby(["Major Group","Brand Name"]).agg({
+        "Cost_per_KG":"mean",
         "Total Quantity":"sum"
-    })
+    }).reset_index()
 
-    group_cost["Unit Cost"] = group_cost["Total Amount"] / group_cost["Total Quantity"]
+    savings_total = 0
+    insights = []
 
-    high_cost = group_cost.sort_values("Unit Cost", ascending=False).head(5)
+    for g in sku["Major Group"].unique():
+        sub = sku[sku["Major Group"] == g]
 
-    for group, row in high_cost.iterrows():
+        if len(sub) < 2:
+            continue
 
-        recommendations.append(
-            f"Reduce spending in {group}. Current unit cost is ${row['Unit Cost']:.2f}, which is above average."
-        )
+        cheap = sub.loc[sub["Cost_per_KG"].idxmin()]
+        exp = sub.loc[sub["Cost_per_KG"].idxmax()]
 
-    return recommendations
+        savings = (exp["Cost_per_KG"] - cheap["Cost_per_KG"]) * exp["Total Quantity"]
+
+        if savings > 500:
+            savings_total += savings
+
+            insights.append({
+                "group": g,
+                "drop": exp["Brand Name"],
+                "keep": cheap["Brand Name"],
+                "saving": savings
+            })
+
+    return savings_total, insights

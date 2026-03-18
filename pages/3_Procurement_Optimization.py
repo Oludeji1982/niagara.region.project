@@ -1,46 +1,28 @@
+import streamlit as st
+import plotly.express as px
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+df = prepare_data(raw)
+df = apply_filters(df)
 
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+top = df.groupby("Major Group")["Total Amount"].sum().nlargest(10).index
+df = df[df["Major Group"].isin(top)]
 
-st.title("Procurement Optimization")
+st.markdown("## **Procurement Optimization**")
 
-df = st.session_state["data"]
+group = df.groupby("Major Group")["Cost_per_KG"].mean().reset_index()
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
-
-group_cost = df.groupby("Major Group").agg({
-    "Total Amount":"sum",
-    "Total Quantity":"sum"
-})
-
-group_cost["Unit Cost"] = group_cost["Total Amount"] / group_cost["Total Quantity"]
-
-benchmark = group_cost["Unit Cost"].min()
-
-group_cost["Potential Savings"] = (
-    group_cost["Unit Cost"] - benchmark
-) * group_cost["Total Quantity"]
-
-group_cost = group_cost.sort_values("Potential Savings",ascending=False)
-
-st.subheader("Optimization Opportunities")
-
-fig, ax = plt.subplots()
-
-group_cost["Potential Savings"].head(10).plot(
-    kind="bar",
-    ax=ax
+fig = px.bar(
+    group,
+    x="Major Group",
+    y="Cost_per_KG",
+    text="Cost_per_KG",
+    color="Cost_per_KG",
+    color_continuous_scale="Reds"
 )
 
-ax.set_xlabel("Major Group")
-ax.set_ylabel("Savings ($)")
-ax.set_title("Potential Procurement Savings")
+fig.update_traces(texttemplate='$%{text:.2f}', textposition='outside')
 
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)

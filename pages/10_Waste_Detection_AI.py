@@ -1,46 +1,21 @@
-from src.filters import apply_filters
-
-raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
-
 import streamlit as st
 import plotly.express as px
-from src.ai_models import waste_detection_model
+from src.filters import apply_filters
+from src.data_prep import prepare_data
 
-st.title("AI Waste Detection System")
+raw = st.session_state.get("raw_data")
+df = prepare_data(raw)
+df = apply_filters(df)
 
-df = st.session_state["data"]
+st.markdown("## **Waste Detection AI**")
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
-
-waste = waste_detection_model(df)
-
-st.subheader("Detected Inefficiencies")
-
-st.dataframe(waste)
-
-st.subheader("High Waste Areas")
+waste = df.groupby(["Brand Name"])["Cost_per_KG"].mean().reset_index()
 
 fig = px.scatter(
     waste,
-    x="Total Quantity",
-    y="Unit Cost",
-    color="Waste Flag",
-    size="Waste Severity",
-    hover_data=["Home", "Major Group"],
-    title="Waste Detection Analysis"
+    x="Brand Name",
+    y="Cost_per_KG",
+    color="Cost_per_KG"
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-st.subheader("AI Insights")
-
-high_waste = waste[waste["Waste Flag"] == True]
-
-for _, row in high_waste.head(5).iterrows():
-    st.warning(
-        f"{row['Home']} is overspending on {row['Major Group']} "
-        f"(Unit Cost: ${row['Unit Cost']:.2f})"
-    )

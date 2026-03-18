@@ -1,43 +1,36 @@
+import streamlit as st
+import plotly.express as px
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+if raw is None:
+    st.error("Run dashboard first")
+    st.stop()
 
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+df = prepare_data(raw)
+df = apply_filters(df)
 
-st.title("Home Performance Overview")
-
-df = st.session_state["data"]
+top = df.groupby("Major Group")["Total Amount"].sum().nlargest(10).index
+df = df[df["Major Group"].isin(top)]
 
 if df.empty:
     st.warning("No data available")
     st.stop()
 
-home_spend = df.groupby("Home")["Total Amount"].sum()
+st.markdown("## **Home Performance**")
 
-col1,col2,col3 = st.columns(3)
+home = df.groupby("Home")["Total Amount"].sum().reset_index()
 
-col1.metric("Total Spend", f"${df['Total Amount'].sum():,.0f}")
-
-cost_per_resident = df["Total Amount"].sum()/df["Total Quantity"].sum()
-
-col2.metric("Cost per Resident per Day", f"${cost_per_resident:.2f}")
-
-col3.metric("Homes Analyzed", len(home_spend))
-
-st.subheader("Home-Level Spend Comparison")
-
-fig, ax = plt.subplots()
-
-home_spend.sort_values(ascending=False).plot(
-    kind="bar",
-    ax=ax
+fig = px.bar(
+    home,
+    x="Home",
+    y="Total Amount",
+    text="Total Amount",
+    color="Total Amount",
+    color_continuous_scale="Greens"
 )
 
-ax.set_xlabel("Home")
-ax.set_ylabel("Spend ($)")
-ax.set_title("Spend by LTC Home")
+fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
 
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)

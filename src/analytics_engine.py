@@ -1,106 +1,18 @@
-import pandas as pd
+def detect_anomalies(df):
 
+    alerts = []
 
-# ----------------------------------
-# FOOD WASTE HEATMAP MODEL
-# ----------------------------------
+    avg = df["Cost_per_KG"].mean()
 
-def food_waste_model(df):
+    if (df["Cost_per_KG"] > avg * 2).sum() > 10:
+        alerts.append("🔴 High cost inefficiency detected")
 
-    waste = df.groupby(
-        ["Home","Major Group"]
-    )["Total Quantity"].sum().reset_index()
+    supplier = df.groupby("Distributor")["Total Amount"].sum()
+    if not supplier.empty:
+        if supplier.max() / supplier.sum() > 0.4:
+            alerts.append("🔴 Supplier concentration risk")
 
-    waste["Waste Score"] = waste["Total Quantity"] / waste["Total Quantity"].max()
+    if (df["Cost_per_KG"] == 0).sum() > 0:
+        alerts.append("🟠 Zero-cost data issue")
 
-    heatmap = waste.pivot_table(
-        index="Home",
-        columns="Major Group",
-        values="Waste Score",
-        fill_value=0
-    )
-
-    return heatmap
-
-
-# ----------------------------------
-# SKU REDUCTION ENGINE
-# ----------------------------------
-
-def sku_reduction_engine(df):
-
-    sku = df.groupby(
-        ["Major Group","Brand Name"]
-    ).agg({
-        "Total Amount":"sum",
-        "Total Quantity":"sum"
-    }).reset_index()
-
-    sku["Unit Cost"] = sku["Total Amount"] / sku["Total Quantity"]
-
-    cheapest = sku.loc[
-        sku.groupby("Major Group")["Unit Cost"].idxmin()
-    ]
-
-    return sku, cheapest
-
-
-# ----------------------------------
-# SUPPLIER COST OPTIMIZATION
-# ----------------------------------
-
-def supplier_optimization(df):
-
-    supplier = df.groupby(
-        ["Distribution Item","Distributor"]
-    ).agg({
-        "Unit Price":"mean"
-    }).reset_index()
-
-    cheapest_supplier = supplier.loc[
-        supplier.groupby("Distribution Item")["Unit Price"].idxmin()
-    ]
-
-    return supplier, cheapest_supplier
-
-    def procurement_advisor(df):
-
-    advice = []
-
-    sku = df.groupby(
-        ["Distribution Item","Brand Name"]
-    ).agg({
-        "Total Amount":"sum",
-        "Total Quantity":"sum",
-        "Unit Price":"mean"
-    }).reset_index()
-
-    for item in sku["Distribution Item"].unique():
-
-        subset = sku[sku["Distribution Item"] == item]
-
-        if len(subset) < 2:
-            continue
-
-        cheapest = subset.loc[subset["Unit Price"].idxmin()]
-        expensive = subset.loc[subset["Unit Price"].idxmax()]
-
-        savings = (
-            expensive["Unit Price"] - cheapest["Unit Price"]
-        ) * expensive["Total Quantity"]
-
-        if savings > 0:
-
-            advice.append({
-                "Item": item,
-                "Current Brand": expensive["Brand Name"],
-                "Recommended Brand": cheapest["Brand Name"],
-                "Potential Savings": round(savings,2)
-            })
-
-    advice_df = pd.DataFrame(advice).sort_values(
-        "Potential Savings",
-        ascending=False
-    )
-
-    return advice_df
+    return alerts

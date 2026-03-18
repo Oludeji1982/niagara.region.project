@@ -1,108 +1,128 @@
-from src.filters import apply_filters
-
-raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
-
 import streamlit as st
 import plotly.express as px
-from src.executive_engine import (
-    generate_executive_summary,
-    scenario_simulator,
-    generate_ai_recommendations
-)
+from src.filters import apply_filters
+from src.data_prep import prepare_data
+from src.analytics_engine import detect_anomalies
 
-st.set_page_config(layout="wide")
+raw = st.session_state.get("raw_data")
+if raw is None:
+    st.error("Run dashboard first")
+    st.stop()
 
-st.title("Executive Dashboard")
-
-df = st.session_state["data"]
+df = prepare_data(raw)
+df = apply_filters(df)
 
 if df.empty:
     st.warning("No data available")
     st.stop()
 
-# -------------------------------
-# EXECUTIVE SUMMARY
-# -------------------------------
+st.markdown("# **Executive Dashboard**")
 
-st.markdown("## Executive Summary")
+# ---------------- KPI ----------------
+total_spend = df["Total Amount"].sum()
+avg_cost = df["Cost_per_KG"].mean()
 
-summary = generate_executive_summary(df)
+# savings
+group = df.groupby("Major Group").agg({
+    "Cost_per_KG":"mean",
+    "Total Quantity":"sum"
+}).reset_index()
 
-st.markdown(f"""
-<div style='background-color:#006b3c;padding:20px;border-radius:10px'>
-<p style='color:white;font-size:16px'>{summary}</p>
+savings = (group["Cost_per_KG"].max() - group["Cost_per_KG"].min()) * group["Total Quantity"].sum()
+savings = min(savings, total_spend * 0.25)  # realistic cap
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("💰 Total Spend", f"${total_spend:,.0f}")
+
+col2.markdown(f"""
+<div style='background:#d4edda;padding:15px;border-radius:10px'>
+<b>💸 Savings Opportunity</b><br>${savings:,.0f}
 </div>
 """, unsafe_allow_html=True)
 
+color = "#f8d7da" if avg_cost > df["Cost_per_KG"].median() else "#d4edda"
 
-# -------------------------------
-# KPI ROW
-# -------------------------------
+col3.markdown(f"""
+<div style='background:{color};padding:15px;border-radius:10px'>
+<b>📉 Cost per KG</b><br>${avg_cost:.2f}
+</div>
+""", unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns(3)
+# ---------------- ALERTS ----------------
+alerts = detect_anomalies(df)
+for a in alerts:
+    st.warning(a)
 
-col1.metric("Total Spend", f"${df['Total Amount'].sum():,.0f}")
-col2.metric("Avg Unit Price", f"${df['Unit Price'].mean():.2f}")
-col3.metric("Total Quantity", f"{df['Total Quantity'].sum():,.0f}")
+# ---------------- TOP 10 PIE ----------------
+top = df.groupby("Major Group")["Total Amount"].sum().reset_index()
+top = top.sort_values("Total Amount", ascending=False).head(10)
 
-
-# -------------------------------
-# SCENARIO SIMULATOR
-# -------------------------------
-
-st.markdown("## Scenario Simulator")
-
-reduction = st.slider("Reduce Quantity (%)", 0, 30, 10)
-
-result = scenario_simulator(df, reduction)
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Original Spend", f"${result['Original Spend']:,.0f}")
-col2.metric("New Spend", f"${result['New Spend']:,.0f}")
-col3.metric("Savings", f"${result['Savings']:,.0f}")
-
-
-# -------------------------------
-# VISUALIZATION
-# -------------------------------
-
-st.markdown("## Spend by Major Group")
-
-group = df.groupby("Major Group")["Total Amount"].sum().reset_index()
-
-fig = px.bar(
-    group,
-    x="Major Group",
-    y="Total Amount",
-    color="Total Amount",
-    title="Spending Distribution",
+fig = px.pie(
+    top,
+    names="Major Group",
+    values="Total Amount",
+    color_discrete_sequence=px.colors.sequential.Greens
 )
+
+fig.update_traces(textinfo='percent+label')
 
 st.plotly_chart(fig, use_container_width=True)
 
+# ================= REPORT EXPORT =================
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
-# -------------------------------
-# AI RECOMMENDATIONS
-# -------------------------------
+def generate_report(df):
 
-st.markdown("## AI Recommendations")
+    total_spend = df["Total Amount"].sum()
+    avg_cost = df["Cost_per_KG"].mean()
+    savings = total_spend * 0.15  # conservative estimate
 
-recommendations = generate_ai_recommendations(df)
+    top_categories = (
+        df.groupby("Major Group")["Total Amount"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(5)
+    )
 
-for rec in recommendations:
-    st.warning(rec)
+    doc = SimpleDocTemplate("dashboard_report.pdf")
+    styles = getSampleStyleSheet()
 
-    from src.report_engine import generate_pdf
+    content = []
 
-if st.button("Export Executive Report"):
+    content.append(Paragraph("Niagara Region Procurement Intelligence Report", styles["Title"]))
+    content.append(Spacer(1, 10))
 
-    file = generate_pdf(summary)
+    content.append(Paragraph(f"<b>Total Spend:</b> ${total_spend:,.0f}", styles["Normal"]))
+    content.append(Paragraph(f"<b>Average Cost per KG:</b> ${avg_cost:.2f}", styles["Normal"]))
+    content.append(Paragraph(f"<b>Estimated Savings Opportunity:</b> ${savings:,.0f}", styles["Normal"]))
+    content.append(Spacer(1, 10))
 
-    with open(file, "rb") as f:
-        st.download_button(
-            "Download Report",
-            f,
-            file_name="LTC_Report.pdf"
-        )
+    content.append(Paragraph("<b>Top Spend Categories:</b>", styles["Heading2"]))
+
+    for cat, val in top_categories.items():
+        content.append(Paragraph(f"{cat}: ${val:,.0f}", styles["Normal"]))
+
+    content.append(Spacer(1, 15))
+
+    content.append(Paragraph(
+        "Executive Insight: Significant savings opportunities exist through supplier optimization, SKU consolidation, and cost-per-KG standardization.",
+        styles["Italic"]
+    ))
+
+    doc.build(content)
+
+    return "dashboard_report.pdf"
+    
+# GENERATE REPORT
+report_file = generate_report(df)
+
+# DOWNLOAD BUTTON
+with open(report_file, "rb") as f:
+    st.download_button(
+        label="📄 Download Executive Report",
+        data=f,
+        file_name="Niagara_Procurement_Report.pdf",
+        mime="application/pdf"
+    )

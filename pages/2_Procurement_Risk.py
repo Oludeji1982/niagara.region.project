@@ -1,33 +1,35 @@
+import streamlit as st
+import plotly.express as px
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
-
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+df = prepare_data(raw)
+df = apply_filters(df)
 
 st.title("Procurement Risk")
 
-df = st.session_state["data"]
+supplier = df.groupby("Distributor")["Total Amount"].sum().reset_index()
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
+supplier["Share"] = supplier["Total Amount"] / supplier["Total Amount"].sum()
 
-dist_spend = df.groupby("Distributor")["Total Amount"].sum()
-
-st.subheader("Supplier Concentration")
-
-fig, ax = plt.subplots()
-
-dist_spend.sort_values(ascending=False).plot(
-    kind="bar",
-    ax=ax
+supplier["Risk"] = supplier["Share"].apply(
+    lambda x: "HIGH" if x > 0.3 else "LOW"
 )
 
-ax.set_xlabel("Distributor")
-ax.set_ylabel("Spend ($)")
-ax.set_title("Spend by Distributor")
+high_only = st.toggle("Show only high-risk suppliers")
 
-st.pyplot(fig)
+if high_only:
+    supplier = supplier[supplier["Risk"] == "HIGH"]
+
+fig = px.bar(
+    supplier,
+    x="Distributor",
+    y="Total Amount",
+    text="Total Amount",
+    color="Risk"
+)
+
+fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+
+st.plotly_chart(fig, use_container_width=True)

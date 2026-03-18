@@ -1,33 +1,28 @@
+import streamlit as st
+import plotly.express as px
 from src.filters import apply_filters
+from src.data_prep import prepare_data
 
 raw = st.session_state.get("raw_data")
-df = apply_filters(raw)
+df = prepare_data(raw)
+df = apply_filters(df)
 
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+st.markdown("## **Product Benchmark**")
 
-st.title("Product Benchmark")
+category = st.selectbox("Select Category", sorted(df["Major Group"].unique()))
 
-df = st.session_state["data"]
+sub = df[df["Major Group"] == category]
 
-if df.empty:
-    st.warning("No data available")
-    st.stop()
+prod = sub.groupby("Brand Name")["Cost_per_KG"].mean().reset_index()
 
-product_price = df.groupby("Distribution Item")["Unit Price"].mean()
-
-st.subheader("Average Product Price")
-
-fig, ax = plt.subplots()
-
-product_price.sort_values(ascending=False).head(15).plot(
-    kind="bar",
-    ax=ax
+fig = px.bar(
+    prod.sort_values("Cost_per_KG", ascending=False).head(10),
+    x="Brand Name",
+    y="Cost_per_KG",
+    text="Cost_per_KG",
+    color="Cost_per_KG"
 )
 
-ax.set_xlabel("Product")
-ax.set_ylabel("Unit Price")
-ax.set_title("Most Expensive Products")
+fig.update_traces(texttemplate='$%{text:.2f}', textposition='outside')
 
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)
