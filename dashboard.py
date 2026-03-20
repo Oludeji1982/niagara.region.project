@@ -1,6 +1,15 @@
 import streamlit as st
 import pandas as pd
 
+import os
+
+logo_path = os.path.join("assets", "logo.png")
+
+if os.path.exists(logo_path):
+    st.image(logo_path, width=80)
+else:
+    st.warning("Logo not found — check assets/logo.png")
+
 from src.data_prep import prepare_data
 from src.filters import apply_filters
 
